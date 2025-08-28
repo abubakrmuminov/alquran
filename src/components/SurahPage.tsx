@@ -1,7 +1,6 @@
-// src/pages/SurahPage.tsx
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Book } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Book } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { AyahCard } from './AyahCard';
 import { quranApi } from '../api/quran';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -9,24 +8,18 @@ import type { Bookmark, Settings, LastRead } from '../types/quran';
 
 interface SurahPageProps {
   surahNumber: number;
-  initialAyah?: number;
   onBack: () => void;
   settings: Settings;
-  /** Если true — рендерим все аяты сразу. По умолчанию false (старое поведение) */
-  showAll?: boolean;
 }
 
 export const SurahPage: React.FC<SurahPageProps> = ({
   surahNumber,
-  initialAyah,
   onBack,
   settings,
-  showAll = false,
 }) => {
   const [surahData, setSurahData] = useState<any>(null);
   const [translationData, setTranslationData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [currentAyahIndex, setCurrentAyahIndex] = useState(0);
   const [bookmarks, setBookmarks] = useLocalStorage<Bookmark[]>('bookmarks', []);
   const [, setLastRead] = useLocalStorage<LastRead | null>('lastRead', null);
 
@@ -34,31 +27,22 @@ export const SurahPage: React.FC<SurahPageProps> = ({
     const loadSurah = async () => {
       setLoading(true);
       try {
-        const [arabicData, transData] = await Promise.all([
+        const [arabicData, translationData] = await Promise.all([
           quranApi.getSurah(surahNumber),
           quranApi.getSurahWithTranslation(surahNumber, settings.translation),
         ]);
 
         setSurahData(arabicData);
-        setTranslationData(transData);
+        setTranslationData(translationData);
 
-        // Установим индекс текущего аяха, если передан initialAyah
-        if (typeof initialAyah === 'number' && initialAyah > 0) {
-          setCurrentAyahIndex(Math.max(0, initialAyah - 1));
-        } else {
-          setCurrentAyahIndex(0);
-        }
-
-        // Если показываем все аяты — можно пометить lastRead как начало суры
-        if (showAll) {
-          const lastRead: LastRead = {
-            surahNumber,
-            ayahNumber: 1,
-            surahName: arabicData.englishName,
-            timestamp: Date.now(),
-          };
-          setLastRead(lastRead);
-        }
+        // сохраняем последнее чтение (первый аят суры)
+        const lastRead: LastRead = {
+          surahNumber,
+          ayahNumber: 1,
+          surahName: arabicData.englishName,
+          timestamp: Date.now(),
+        };
+        setLastRead(lastRead);
       } catch (error) {
         console.error('Error loading surah:', error);
       } finally {
@@ -67,23 +51,7 @@ export const SurahPage: React.FC<SurahPageProps> = ({
     };
 
     loadSurah();
-  }, [surahNumber, settings.translation, initialAyah, setLastRead, showAll]);
-
-  // Обновляем lastRead только в режиме одиночного просмотра (чтобы не перезаписывать при скролле всего списка)
-  useEffect(() => {
-    if (!showAll && surahData && currentAyahIndex >= 0) {
-      const currentAyah = surahData.ayahs[currentAyahIndex];
-      if (currentAyah) {
-        const lastRead: LastRead = {
-          surahNumber,
-          ayahNumber: currentAyah.numberInSurah,
-          surahName: surahData.englishName,
-          timestamp: Date.now(),
-        };
-        setLastRead(lastRead);
-      }
-    }
-  }, [currentAyahIndex, surahData, surahNumber, setLastRead, showAll]);
+  }, [surahNumber, settings.translation, setLastRead]);
 
   const handleToggleBookmark = (bookmark: Bookmark) => {
     setBookmarks(prev => {
@@ -105,16 +73,6 @@ export const SurahPage: React.FC<SurahPageProps> = ({
     return bookmarks.some(
       b => b.surahNumber === surahNumber && b.ayahNumber === ayahNumber
     );
-  };
-
-  const navigateAyah = (direction: 'prev' | 'next') => {
-    if (!surahData) return;
-
-    if (direction === 'prev' && currentAyahIndex > 0) {
-      setCurrentAyahIndex(prev => prev - 1);
-    } else if (direction === 'next' && currentAyahIndex < surahData.ayahs.length - 1) {
-      setCurrentAyahIndex(prev => prev + 1);
-    }
   };
 
   if (loading) {
@@ -148,10 +106,6 @@ export const SurahPage: React.FC<SurahPageProps> = ({
     );
   }
 
-  // Подготовим текущие данные (для режима одиночного просмотра)
-  const currentAyah = surahData.ayahs?.[currentAyahIndex];
-  const currentTranslation = translationData.ayahs?.[currentAyahIndex];
-
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -173,9 +127,7 @@ export const SurahPage: React.FC<SurahPageProps> = ({
 
           <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
             <Book className="w-4 h-4" />
-            <span>
-              {surahData.numberOfAyahs} аятов
-            </span>
+            <span>{surahData.numberOfAyahs} аятов</span>
           </div>
         </div>
 
@@ -189,82 +141,27 @@ export const SurahPage: React.FC<SurahPageProps> = ({
         </div>
       </div>
 
-      {showAll ? (
-        // Режим: показать все аяты
-        <div className="space-y-6">
-          {surahData.ayahs.map((ayah: any, index: number) => (
-            <motion.div
-              key={ayah.number}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(index * 0.02, 0.5), duration: 0.25 }}
-            >
-              <AyahCard
-                ayah={ayah}
-                translation={translationData.ayahs[index]}
-                surahNumber={surahNumber}
-                surahName={surahData.englishName}
-                settings={settings}
-                isBookmarked={isBookmarked(ayah.numberInSurah)}
-                onToggleBookmark={handleToggleBookmark}
-              />
-            </motion.div>
-          ))}
-        </div>
-      ) : (
-        // Режим: по одному аяту (старое поведение)
-        <>
-          {/* Navigation */}
-          <div className="flex justify-between items-center mb-6">
-            <motion.button
-              onClick={() => navigateAyah('prev')}
-              disabled={currentAyahIndex === 0}
-              className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-md disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-shadow"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Предыдущий</span>
-            </motion.button>
-
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              {currentAyahIndex + 1} / {surahData.ayahs.length}
-            </div>
-
-            <motion.button
-              onClick={() => navigateAyah('next')}
-              disabled={currentAyahIndex === surahData.ayahs.length - 1}
-              className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-md disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-shadow"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <span>Следующий</span>
-              <ArrowRight className="w-4 h-4" />
-            </motion.button>
-          </div>
-
-          {/* Current Ayah */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentAyahIndex}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <AyahCard
-                ayah={currentAyah}
-                translation={currentTranslation}
-                surahNumber={surahNumber}
-                surahName={surahData.englishName}
-                settings={settings}
-                isBookmarked={isBookmarked(currentAyah.numberInSurah)}
-                onToggleBookmark={handleToggleBookmark}
-              />
-            </motion.div>
-          </AnimatePresence>
-        </>
-      )}
+      {/* All Ayahs */}
+      <div className="space-y-6">
+        {surahData.ayahs.map((ayah: any, index: number) => (
+          <motion.div
+            key={ayah.number}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: index * 0.02 }}
+          >
+            <AyahCard
+              ayah={ayah}
+              translation={translationData.ayahs[index]}
+              surahNumber={surahNumber}
+              surahName={surahData.englishName}
+              settings={settings}
+              isBookmarked={isBookmarked(ayah.numberInSurah)}
+              onToggleBookmark={handleToggleBookmark}
+            />
+          </motion.div>
+        ))}
+      </div>
     </motion.div>
   );
 };
