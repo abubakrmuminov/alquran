@@ -223,4 +223,3 @@ export const SurahPage: React.FC<SurahPageProps> = ({
 };  
   
   
-этот?
