@@ -1,6 +1,6 @@
-import React from 'react';
-import { Settings, Moon, Sun } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { Settings, Moon, Sun, Menu, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface NavigationProps {
   currentPage: string;
@@ -15,6 +15,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   isDark, 
   onToggleTheme 
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
   const navItems = [
     { id: 'dashboard', label: 'Home' },
     { id: 'search', label: 'Search' },
@@ -35,8 +37,8 @@ export const Navigation: React.FC<NavigationProps> = ({
             </h1>
           </div>
 
-          {/* Навигация */}
-          <div className="flex items-center space-x-8">
+          {/* Десктопное меню */}
+          <div className="hidden md:flex items-center space-x-8">
             {navItems.map((item) => {
               const isActive = currentPage === item.id;
 
@@ -58,8 +60,8 @@ export const Navigation: React.FC<NavigationProps> = ({
             })}
           </div>
 
-          {/* Правый блок */}
-          <div className="flex items-center space-x-4">
+          {/* Desktop actions */}
+          <div className="hidden md:flex items-center space-x-4">
             <button 
               onClick={onToggleTheme}
               className="p-2 text-gray-400 hover:text-white"
@@ -74,8 +76,73 @@ export const Navigation: React.FC<NavigationProps> = ({
               <Settings className="w-5 h-5" />
             </button>
           </div>
+
+          {/* Бургер (мобилка) */}
+          <div className="md:hidden">
+            <button 
+              onClick={() => setIsOpen(!isOpen)} 
+              className="p-2 text-gray-400 hover:text-white"
+            >
+              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Мобильное меню */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="md:hidden bg-gray-800 border-t border-gray-700"
+          >
+            <div className="flex flex-col space-y-4 p-4">
+              {navItems.map((item) => {
+                const isActive = currentPage === item.id;
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      onPageChange(item.id);
+                      setIsOpen(false);
+                    }}
+                    className={`text-sm font-medium text-left ${
+                      isActive ? 'text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+
+              <button 
+                onClick={() => {
+                  onToggleTheme();
+                  setIsOpen(false);
+                }}
+                className="flex items-center space-x-2 text-gray-400 hover:text-white"
+              >
+                {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                <span>Toggle Theme</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  onPageChange('settings');
+                  setIsOpen(false);
+                }}
+                className="flex items-center space-x-2 text-gray-400 hover:text-white"
+              >
+                <Settings className="w-5 h-5" />
+                <span>Settings</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 };
