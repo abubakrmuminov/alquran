@@ -1,10 +1,9 @@
+// src/components/SurahPage.tsx
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Book } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { AyahCard } from './AyahCard';
-import { quranApi } from '../api/quran';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import type { Bookmark, Settings, LastRead } from '../types/quran';
+import type { SurahData, Translation, LastRead, Settings } from '../types/quran';
+import quranApi from '../api/quranApi';
 
 interface SurahPageProps {
   surahNumber: number;
@@ -19,40 +18,43 @@ export const SurahPage: React.FC<SurahPageProps> = ({
   onBack,
   settings,
 }) => {
-  const [surahData, setSurahData] = useState<any>(null);
+  const [surahData, setSurahData] = useState<SurahData | null>(null);
+  const [translationData, setTranslationData] = useState<Translation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [bookmarks, setBookmarks] = useLocalStorage<Bookmark[]>('bookmarks', []);
-  const [, setLastRead] = useLocalStorage<LastRead | null>('lastRead', null);
+  const [lastRead, setLastRead] = useLocalStorage<LastRead>('lastRead', {
+    surahNumber,
+    ayahNumber: initialAyah || 1,
+    surahName: '',
+    timestamp: Date.now(),
+  });
 
+  const [bookmarks, setBookmarks] = useLocalStorage('bookmarks', []);
+
+  // Загрузка данных
   useEffect(() => {
     let isMounted = true;
 
     const loadSurah = async () => {
       setLoading(true);
       try {
-        const arabicData = await quranApi.getSurah(surahNumber);
-        const translationData = await quranApi.getSurahWithTranslation(surahNumber, settings.translation);
+        const [arabicRes, translationRes] = await Promise.all([
+          quranApi.getSurah(surahNumber),
+          quranApi.getSurahWithTranslation(surahNumber, settings.translation),
+        ]);
 
         if (!isMounted) return;
 
-        // Объединяем арабский текст и перевод
-        const ayahs = arabicData.ayahs.map((ayah: any, i: number) => ({
-          ...ayah,
-          translation: translationData.ayahs[i]?.text || '',
-        }));
+        setSurahData(arabicRes);
+        setTranslationData(translationRes);
 
-        setSurahData({ ...arabicData, ayahs });
-
-        // lastRead
         setLastRead({
           surahNumber,
           ayahNumber: initialAyah || 1,
-          surahName: arabicData.englishName,
+          surahName: arabicRes.englishName,
           timestamp: Date.now(),
         });
-
-      } catch (error) {
-        console.error('Error loading surah:', error);
+      } catch (err) {
+        console.error('Error loading surah:', err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -60,114 +62,59 @@ export const SurahPage: React.FC<SurahPageProps> = ({
 
     loadSurah();
 
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [surahNumber, settings.translation, initialAyah, setLastRead]);
 
-  const handleToggleBookmark = (bookmark: Bookmark) => {
-    setBookmarks(prev => {
-      const isBookmarked = prev.some(
-        b => b.surahNumber === bookmark.surahNumber && b.ayahNumber === bookmark.ayahNumber
+  const isBookmarked = (ayahNumber: number) =>
+    bookmarks.some(
+      (b: any) => b.surahNumber === surahNumber && b.ayahNumber === ayahNumber
+    );
+
+  const handleToggleBookmark = (ayah: any, translationText: string) => {
+    const exists = isBookmarked(ayah.numberInSurah);
+    if (exists) {
+      setBookmarks((prev: any[]) =>
+        prev.filter(
+          b => !(b.surahNumber === surahNumber && b.ayahNumber === ayah.numberInSurah)
+        )
       );
-
-      if (isBookmarked) {
-        return prev.filter(
-          b => !(b.surahNumber === bookmark.surahNumber && b.ayahNumber === bookmark.ayahNumber)
-        );
-      } else {
-        return [...prev, bookmark];
-      }
-    });
+    } else {
+      setBookmarks((prev: any[]) => [
+        ...prev,
+        {
+          surahNumber,
+          surahName: surahData?.englishName || '',
+          ayahNumber: ayah.numberInSurah,
+          text: ayah.text,
+          translation: translationText,
+        },
+      ]);
+    }
   };
 
-  const isBookmarked = (ayahNumber: number) => {
-    return bookmarks.some(
-      b => b.surahNumber === surahNumber && b.ayahNumber === ayahNumber
-    );
-  };
+  if (loading) return <div className="p-4 text-center">Loading...</div>;
+  if (!surahData || !translationData) return <div className="p-4 text-center">No data</div>;
 
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 animate-pulse">
-          <div className="h-8 bg-gray-200 dark:bg-gray-600 rounded mb-6 w-1/3"></div>
-          <div className="space-y-4">
-            <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded"></div>
-            <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded w-4/5"></div>
-            <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded w-3/5"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!surahData) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 text-center">
-          <div className="text-red-500 mb-4">Ошибка загрузки суры</div>
-          <button
-            onClick={onBack}
-            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg"
-          >
-            Вернуться назад
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const ayahs = surahData.ayahs || [];
+  const translations = translationData.ayahs || [];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="max-w-4xl mx-auto p-6"
-    >
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <motion.button
-            onClick={onBack}
-            className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Назад к сурам</span>
-          </motion.button>
-
-          <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-            <Book className="w-4 h-4" />
-            <span>
-              Всего аятов: {surahData.ayahs.length}
-            </span>
-          </div>
-        </div>
-
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">
-            {surahData.name}
-          </h1>
-          <div className="text-lg text-gray-600 dark:text-gray-400">
-            {surahData.englishName} - {surahData.englishNameTranslation}
-          </div>
-        </div>
-      </div>
-
-      {/* All Ayahs */}
-      <div className="space-y-6">
-        {surahData.ayahs.map((ayah: any) => (
-          <AyahCard
-            key={ayah.numberInSurah}
-            ayah={ayah}
-            translation={{ text: ayah.translation }}
-            surahNumber={surahNumber}
-            surahName={surahData.englishName}
-            settings={settings}
-            isBookmarked={isBookmarked(ayah.numberInSurah)}
-            onToggleBookmark={handleToggleBookmark}
-          />
-        ))}
-      </div>
-    </motion.div>
+    <div className="p-4 space-y-6">
+      <button onClick={onBack} className="mb-4 text-blue-500">Back</button>
+      {ayahs.map((ayah, idx) => (
+        <AyahCard
+          key={ayah.numberInSurah}
+          ayah={ayah}
+          translation={translations[idx] || { text: '' }}
+          surahNumber={surahNumber}
+          surahName={surahData.englishName}
+          settings={settings}
+          isBookmarked={isBookmarked(ayah.numberInSurah)}
+          onToggleBookmark={handleToggleBookmark}
+        />
+      ))}
+    </div>
   );
 };
