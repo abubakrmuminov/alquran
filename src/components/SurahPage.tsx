@@ -20,45 +20,49 @@ export const SurahPage: React.FC<SurahPageProps> = ({
   settings,
 }) => {
   const [surahData, setSurahData] = useState<any>(null);
-  const [translationData, setTranslationData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [bookmarks, setBookmarks] = useLocalStorage<Bookmark[]>('bookmarks', []);
   const [, setLastRead] = useLocalStorage<LastRead | null>('lastRead', null);
 
-  // Загрузка суры и перевода
   useEffect(() => {
+    let isMounted = true;
+
     const loadSurah = async () => {
       setLoading(true);
       try {
-        const [arabicData, translationData] = await Promise.all([
-          quranApi.getSurah(surahNumber),
-          quranApi.getSurahWithTranslation(surahNumber, settings.translation),
-        ]);
+        const arabicData = await quranApi.getSurah(surahNumber);
+        const translationData = await quranApi.getSurahWithTranslation(surahNumber, settings.translation);
 
-        setSurahData(arabicData);
-        setTranslationData(translationData);
+        if (!isMounted) return;
 
-        // Устанавливаем lastRead на первый аят или initialAyah
-        const firstAyahNumber = initialAyah ? initialAyah : 1;
-        const lastRead: LastRead = {
+        // Объединяем арабский текст и перевод
+        const ayahs = arabicData.ayahs.map((ayah: any, i: number) => ({
+          ...ayah,
+          translation: translationData.ayahs[i]?.text || '',
+        }));
+
+        setSurahData({ ...arabicData, ayahs });
+
+        // lastRead
+        setLastRead({
           surahNumber,
-          ayahNumber: firstAyahNumber,
+          ayahNumber: initialAyah || 1,
           surahName: arabicData.englishName,
           timestamp: Date.now(),
-        };
-        setLastRead(lastRead);
+        });
 
       } catch (error) {
         console.error('Error loading surah:', error);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadSurah();
+
+    return () => { isMounted = false; };
   }, [surahNumber, settings.translation, initialAyah, setLastRead]);
 
-  // Закладки
   const handleToggleBookmark = (bookmark: Bookmark) => {
     setBookmarks(prev => {
       const isBookmarked = prev.some(
@@ -96,7 +100,7 @@ export const SurahPage: React.FC<SurahPageProps> = ({
     );
   }
 
-  if (!surahData || !translationData) {
+  if (!surahData) {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 text-center">
@@ -134,7 +138,7 @@ export const SurahPage: React.FC<SurahPageProps> = ({
           <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
             <Book className="w-4 h-4" />
             <span>
-              Всего аятов: {surahData.numberOfAyahs}
+              Всего аятов: {surahData.ayahs.length}
             </span>
           </div>
         </div>
@@ -151,11 +155,11 @@ export const SurahPage: React.FC<SurahPageProps> = ({
 
       {/* All Ayahs */}
       <div className="space-y-6">
-        {surahData.ayahs.map((ayah: any, index: number) => (
+        {surahData.ayahs.map((ayah: any) => (
           <AyahCard
             key={ayah.numberInSurah}
             ayah={ayah}
-            translation={translationData.ayahs[index]}
+            translation={{ text: ayah.translation }}
             surahNumber={surahNumber}
             surahName={surahData.englishName}
             settings={settings}
